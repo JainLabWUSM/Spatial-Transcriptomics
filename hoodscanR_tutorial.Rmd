@@ -1,9 +1,4 @@
----
-title: "Untitled"
-author: "stephaniereinert"
-date: "2025-03-03"
-output: html_document
----
+
 
 ```{r}
 
@@ -28,8 +23,8 @@ library(scico)                 # color palettes for data visualization
 
 # STEP ONE
 # load cell metadata and cell type annotations
-cells_meta <- read.csv("/Users/stephreinert/Desktop/xenium/xen12_3990/cells.csv")
-cell_annotations <- read.csv("/Users/stephreinert/Desktop/ometifs&csvs/hoodscanR_cell_annotations_3990.csv")  # contains 'cell_id' and 'group'
+cells_meta <- read.csv("/PATH/cells.csv")
+cell_annotations <- read.csv("/PATH/cell_annotations.csv")  # contains 'cell_id' and 'group'
 
 # merge metadata with cell annotations based on common 'cell_id'
 # adds cell type info (stored in 'group') to the cells_meta DF
@@ -40,7 +35,7 @@ rownames(cells_meta) <- cells_meta$cell_id
 
 # STEP TWO
 # load Xenium gene expression data from HDF5 file
-xenium_counts <- Read10X_h5("/Users/stephreinert/Desktop/xenium/xen12_3990/cell_feature_matrix.h5")
+xenium_counts <- Read10X_h5("/PATH/cell_feature_matrix.h5")
 
 # assume the counts are under the "Gene Expression" group.
 gene_counts <- xenium_counts[["Gene Expression"]]
