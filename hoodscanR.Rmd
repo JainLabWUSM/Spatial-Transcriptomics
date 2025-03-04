@@ -1,0 +1,155 @@
+---
+title: "Untitled"
+author: "stephaniereinert"
+date: "2025-03-03"
+output: html_document
+---
+
+```{r}
+
+library(Seurat)                # package that provides a full toolkit for single-cell RNA-seq analysis
+library(SeuratDisk)            # used to convert seurat objs to different file formats
+library(SeuratObject)          # contains core classes and methods that form the basis of seurat objs
+library(SingleCellExperiment)  # bioconductor class of objs designed for single-cell experiments
+library(SpatialExperiment)     # class of objs tailored for spatial transcriptomics data
+library(rhdf5)                 # read from and write to HDF5 files
+library(dplyr)                 # functions for efficient data manipulation 
+library(readr)                 # functions for reading data files like .csvs into R
+
+library(hoodscanR)             # package for neighborhood analysis in single-cell spatial transcriptomics data
+library(scico)                 # color palettes for data visualization
+
+```
+
+
+```{r}
+
+### DATA PREPARATION ###
+
+# STEP ONE
+# load cell metadata and cell type annotations
+cells_meta <- read.csv("/Users/stephreinert/Desktop/xenium/xen12_3990/cells.csv")
+cell_annotations <- read.csv("/Users/stephreinert/Desktop/ometifs&csvs/hoodscanR_cell_annotations_3990.csv")  # contains 'cell_id' and 'group'
+
+# merge metadata with cell annotations based on common 'cell_id'
+# adds cell type info (stored in 'group') to the cells_meta DF
+cells_meta <- merge(cells_meta, cell_annotations, by = "cell_id", all.x = TRUE)
+
+# set rownames to cell_id so that they match column names in the count matrix
+rownames(cells_meta) <- cells_meta$cell_id
+
+# STEP TWO
+# load Xenium gene expression data from HDF5 file
+xenium_counts <- Read10X_h5("/Users/stephreinert/Desktop/xenium/xen12_3990/cell_feature_matrix.h5")
+
+# assume the counts are under the "Gene Expression" group.
+gene_counts <- xenium_counts[["Gene Expression"]]
+
+# STEP THREE 
+# create seurat object using the gene counts
+xenium_seurat <- CreateSeuratObject(counts = gene_counts)
+
+# STEP FOUR
+# add the merged metadata (which now includes cell type information) to seurat object
+xenium_seurat <- AddMetaData(xenium_seurat, metadata = cells_meta)
+
+# normalize data (only if necessary)
+xenium_seurat <- NormalizeData(xenium_seurat)
+
+# STEP FIVE  ***START HERE IF YOU ALREADY HAVE A FULL SEURAT OBJ*** 
+# convert the Seurat object to a SingleCellExperiment object 
+query_sce <- as.SingleCellExperiment(xenium_seurat)
+
+# STEP SIX
+# extract spatial coordinates
+# note: make sure the column names "x_centroid" and "y_centroid" match what is in your meta data
+coords <- as.matrix(query_sce@colData[, c("x_centroid", "y_centroid")])
+
+# STEP SEVEN
+# create SpatialExperiment object using counts, metadata, and spatial coordinates
+query_spe <- SpatialExperiment(
+  assays = list(counts = assay(query_sce, "counts")),
+  colData = colData(query_sce),
+  spatialCoords = coords
+)
+
+# inspect resulting SpatialExperiment object
+query_spe
+
+```
+
+```{r}
+
+### HOODSCANR ANALYSIS ###
+
+# run hoodscanR using "group" column from your colData for cell annotations
+query_spe <- readHoodData(query_spe, anno_col = "group")
+
+```
+
+
+```{r}
+
+# plot tissue
+plotTissue(query_spe, color = cell_annotation, size = 1.5, alpha = 0.8)
+
+```
+
+```{r}
+
+# calculate neighborhoods
+fnc <- findNearCells(query_spe, k = 100)
+
+pm <- scanHoods(fnc$distance)
+
+hoods <- mergeByGroup(pm, fnc$cells)
+
+plotHoodMat(hoods, n = 10, hm_height = 5)
+
+```
+
+```{r}
+
+# merge neighborhood info and calculate metrics
+query_spe <- mergeHoodSpe(query_spe, hoods)
+
+query_spe <- calcMetrics(query_spe, pm_cols = colnames(hoods))
+
+# shows where in the tissue cells have high or low neighborhood diversity, high entropy = high diversity
+plotTissue(query_spe, size = 1.5, color = entropy) +
+  scale_color_scico(palette = "tokyo")
+
+# shows the effective number of neighboring cell types influencing each cell, high perplexity = complex/spread out hood
+plotTissue(query_spe, size = 1.5, color = perplexity) +
+  scale_color_scico(palette = "tokyo")
+
+```
+
+
+```{r}
+
+### PEARSON CORRELATION ###
+# shows which cell types or neighborhoods tend to occur together
+# high pearson correlation = cells of those types often share similar local neighborhoods
+
+plotColocal(query_spe, pm_cols = colnames(hoods))
+
+```
+
+```{r}
+
+### CLUSTERING AND VISUALIZATION ###
+# probability table shows which cell types (or neighborhood compositions) are most represented in each cluster
+# one cluster might have a high probability for particular cell type, another might show a mixed neighborhood
+
+# cluster by neighborhood and visualize on tissue
+query_spe <- clustByHood(query_spe, pm_cols = colnames(hoods), k = 16)
+plotTissue(query_spe, color = clusters)
+
+# inspect the probability distribution per cluster
+plotProbDist(query_spe, pm_cols = colnames(hoods), by_cluster = TRUE, 
+             plot_all = TRUE, show_clusters = as.character(seq(16)))
+
+```
+
+
