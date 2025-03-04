@@ -1,1 +1,1 @@
-# Spatial--Transcriptomics
+# Spatial-Transcriptomics
